@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Web Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #dataLog {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>BLE Web Interface</h1>
+    
+    <div class="container">
+        <div class="button-group">
+            <button id="connectButton">Verbinden</button>
+            <button id="disconnectButton" disabled>Trennen</button>
+        </div>
+        
+        <div class="button-group">
+            <button id="sendButton" disabled>Daten senden</button>
+            <button id="readButton" disabled>Daten lesen</button>
+        </div>
+
+        <div id="status"></div>
+        
+        <div id="dataLog">
+            <strong>Log:</strong><br>
+        </div>
+    </div>
+
+    <script>
+        // BLE Kommunikationsklasse aus dem vorherigen Beispiel hier einfügen
+        class BLECommunication {
+            constructor() {
+                this.device = null;
+                this.server = null;
+                this.service = null;
+                this.characteristic = null;
+            }
+
+            async connect() {
+                try {
+                    this.device = await navigator.bluetooth.requestDevice({
+                        filters: [{
+                            services: ['battery_service']
+                        }]
+                    });
+
+                    this.logMessage('Gerät ausgewählt: ' + this.device.name);
+
+                    this.server = await this.device.gatt.connect();
+                    this.logMessage('Server verbunden');
+
+                    this.service = await this.server.getPrimaryService('battery_service');
+                    this.logMessage('Service gefunden');
+
+                    this.characteristic = await this.service.getCharacteristic('battery_level');
+                    this.logMessage('Characteristic gefunden');
+
+                    await this.startNotifications();
+
+                    return true;
+                } catch (error) {
+                    this.logMessage('Verbindungsfehler: ' + error, true);
+                    return false;
+                }
+            }
+
+            async startNotifications() {
+                try {
+                    await this.characteristic.startNotifications();
+                    this.logMessage('Benachrichtigungen aktiviert');
+
+                    this.characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                        const value = event.target.value;
+                        this.logMessage('Empfangener Wert: ' + value);
+                    });
+                } catch (error) {
+                    this.logMessage('Fehler beim Aktivieren der Benachrichtigungen: ' + error, true);
+                }
+            }
+
+            async sendData(data) {
+                try {
+                    const buffer = new ArrayBuffer(data.length);
+                    const dataView = new DataView(buffer);
+                    for (let i = 0; i < data.length; i++) {
+                        dataView.setUint8(i, data[i]);
+                    }
+
+                    await this.characteristic.writeValue(buffer);
+                    this.logMessage('Daten gesendet: ' + data);
+                    return true;
+                } catch (error) {
+                    this.logMessage('Fehler beim Senden: ' + error, true);
+                    return false;
+                }
+            }
+
+            async readData() {
+                try {
+                    const value = await this.characteristic.readValue();
+                    this.logMessage('Gelesener Wert: ' + value);
+                    return value;
+                } catch (error) {
+                    this.logMessage('Fehler beim Lesen: ' + error, true);
+                    return null;
+                }
+            }
+
+            disconnect() {
+                if (this.device && this.device.gatt.connected) {
+                    this.device.gatt.disconnect();
+                    this.logMessage('Verbindung getrennt');
+                }
+            }
+
+            logMessage(message, isError = false) {
+                const logDiv = document.getElementById('dataLog');
+                const timestamp = new Date().toLocaleTimeString();
+                const messageDiv = document.createElement('div');
+                messageDiv.textContent = `${timestamp}: ${message}`;
+                if (isError) {
+                    messageDiv.style.color = '#dc3545';
+                }
+                logDiv.appendChild(messageDiv);
+                logDiv.scrollTop = logDiv.scrollHeight;
+
+                // Status aktualisieren
+                const statusDiv = document.getElementById('status');
+                statusDiv.textContent = message;
+                statusDiv.className = isError ? 'error' : 'success';
+            }
+        }
+
+        // UI Handler
+        const bleCommunication = new BLECommunication();
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const sendButton = document.getElementById('sendButton');
+        const readButton = document.getElementById('readButton');
+
+        connectButton.addEventListener('click', async () => {
+            connectButton.disabled = true;
+            const connected = await bleCommunication.connect();
+            if (connected) {
+                disconnectButton.disabled = false;
+                sendButton.disabled = false;
+                readButton.disabled = false;
+            } else {
+                connectButton.disabled = false;
+            }
+        });
+
+        disconnectButton.addEventListener('click', () => {
+            bleCommunication.disconnect();
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+            sendButton.disabled = true;
+            readButton.disabled = true;
+        });
+
+        sendButton.addEventListener('click', async () => {
+            const data = new Uint8Array([1, 2, 3]); // Beispieldaten
+            await bleCommunication.sendData(data);
+        });
+
+        readButton.addEventListener('click', async () => {
+            await bleCommunication.readData();
+        });
+
+        // Prüfen ob Web Bluetooth API verfügbar ist
+        if (!navigator.bluetooth) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = 'Web Bluetooth API wird von diesem Browser nicht unterstützt!';
+            statusDiv.className = 'error';
+            connectButton.disabled = true;
+        }
+    </script>
+</body>
+</html>
