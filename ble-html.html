@@ -96,9 +96,15 @@
             async connect() {
                 try {
                     this.device = await navigator.bluetooth.requestDevice({
-                        filters: [{
-                            services: ['battery_service']
-                        }]
+                        // Akzeptiert alle BLE-Geräte
+                        acceptAllDevices: true,
+                        // Optional können Sie nach spezifischen Services suchen
+                        optionalServices: [
+                            'battery_service',
+                            '0000180f-0000-1000-8000-00805f9b34fb', // Battery Service UUID
+                            '0000180a-0000-1000-8000-00805f9b34fb', // Device Information Service
+                            // Fügen Sie hier weitere Service UUIDs hinzu
+                        ]
                     });
 
                     this.logMessage('Gerät ausgewählt: ' + this.device.name);
